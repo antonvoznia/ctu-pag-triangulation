@@ -23,23 +23,24 @@ struct Point {
 
 struct Cell {
     float cost;
+    float dist;
     int i = -1;
     int k = -1;
     int j = -1;
 };
 
-void findTriangle(int c1, int c2, Cell **C, vector<tuple<int, int, int>> &triangles) {
+void findTriangle(int c1, int c2, Cell *C, const int &N, vector<tuple<int, int, int>> &triangles) {
     if (c1 < 0 || c2 < 0) {
         return;
     }
 
-    triangles.push_back(tuple(C[c1][c2].i, C[c1][c2].k, C[c1][c2].j));
+    triangles.push_back(tuple(C[c1 * N + c2].i, C[c1 * N + c2].k, C[c1 * N + c2].j));
 
     // triangles between dots i and k
-    findTriangle(C[c1][c2].i, C[c1][c2].k, C, triangles);
+    findTriangle(C[c1 * N + c2].i, C[c1 * N + c2].k, C, N, triangles);
 
     // triangles between dots k and j
-    findTriangle(C[c1][c2].k, C[c1][c2].j, C, triangles);
+    findTriangle(C[c1 * N + c2].k, C[c1 * N + c2].j, C, N, triangles);
 }
 
 inline float calculateDistance(int pId1, int pId2, const vector<Point> &points) {
@@ -61,38 +62,43 @@ tuple<vector<tuple<int, int, int>>, float> triangulate(const vector<Point> &poin
 	// triangles: vector of triangles. Each triangle is represented by indices (into points vector) of its corner points.
 
     int N = points.size();
-    Cell **C = new Cell *[N];
+    Cell *C = new Cell [N * N];
+
     for (int i = 0; i < N; i++) {
-        C[i] = new Cell[N];
-    }
-
-    for (int diff = 0; diff < points.size(); ++diff) {
-        for (int i = 0, j = diff; j < N; ++i, ++j) {
-            if (j < i + 2) {
-                C[i][j].cost = 0.0f;
-            } else {
-                C[i][j].cost = MAXFLOAT;
-
-                for (int k = i+1; k < j; ++k) {
-                    float d1 = calculateDistance(i, k, points);
-                    float d2 = calculateDistance(k, j, points);
-                    float d3 = calculateDistance(j, i, points);
-
-                    float cost = C[i][k].cost + C[k][j].cost + d1 + d2 + d3;
-
-                    if (C[i][j].cost > cost) {
-                        C[i][j].cost = cost;
-                        C[i][j].i = i;
-                        C[i][j].k = k;
-                        C[i][j].j = j;
-                    }
-                }
-            }
+        for (int j = i; j < N; j++) {
+            C[i * N + j].dist = calculateDistance(i, j, points);
         }
     }
 
-    findTriangle(0, N - 1, C, triangles);
-    triagCost = C[0][N - 1].cost;
+    for (int diff = 0; diff < points.size(); ++diff) {
+        int i = 0;
+
+        for (int j = diff; j < N; ++j) {
+            if (j < i + 2) {
+                C[i * N + j].cost = 0.0f;
+            } else {
+                C[i * N + j].cost = MAXFLOAT;
+
+                for (int k = i+1; k < j; ++k) {
+
+                    float cost = C[i * N + k].cost + C[k * N + j].cost
+                            + C[i * N + k].dist + C[k * N + j].dist + C[i * N + j].dist;
+                    {
+                        if (C[i * N + j].cost > cost) {
+                            C[i * N + j].cost = cost;
+                            C[i * N + j].i = i;
+                            C[i * N + j].k = k;
+                            C[i * N + j].j = j;
+                        }
+                    }
+                }
+            }
+            ++i;
+        }
+    }
+
+    findTriangle(0, N - 1, C, N, triangles);
+    triagCost = C[N - 1].cost;
 
 	return make_tuple(move(triangles), triagCost);
 }
