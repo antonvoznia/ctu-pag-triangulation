@@ -21,6 +21,27 @@ struct Point {
 	float x, y;
 };
 
+struct Cell {
+    float cost;
+    int i = -1;
+    int k = -1;
+    int j = -1;
+};
+
+void findTriangle(int c1, int c2, Cell **C, vector<tuple<int, int, int>> &triangles) {
+    if (c1 < 0 || c2 < 0) {
+        return;
+    }
+
+    triangles.push_back(tuple(C[c1][c2].i, C[c1][c2].k, C[c1][c2].j));
+
+    // triangles between dots i and k
+    findTriangle(C[c1][c2].i, C[c1][c2].k, C, triangles);
+
+    // triangles between dots k and j
+    findTriangle(C[c1][c2].k, C[c1][c2].j, C, triangles);
+}
+
 inline float calculateDistance(int pId1, int pId2, const vector<Point> &points) {
     Point p1 = points[pId1];
     Point p2 = points[pId2];
@@ -40,34 +61,38 @@ tuple<vector<tuple<int, int, int>>, float> triangulate(const vector<Point> &poin
 	// triangles: vector of triangles. Each triangle is represented by indices (into points vector) of its corner points.
 
     int N = points.size();
-    float **C = new float *[N];
+    Cell **C = new Cell *[N];
     for (int i = 0; i < N; i++) {
-        C[i] = new float[N];
+        C[i] = new Cell[N];
     }
 
     for (int diff = 0; diff < points.size(); ++diff) {
         for (int i = 0, j = diff; j < N; ++i, ++j) {
             if (j < i + 2) {
-                C[i][j] = 0.0f;
+                C[i][j].cost = 0.0f;
             } else {
-                C[i][j] = MAXFLOAT;
+                C[i][j].cost = MAXFLOAT;
 
                 for (int k = i+1; k < j; ++k) {
                     float d1 = calculateDistance(i, k, points);
                     float d2 = calculateDistance(k, j, points);
                     float d3 = calculateDistance(j, i, points);
 
-                    float cost = C[i][k] + C[k][j] + d1 + d2 + d3;
+                    float cost = C[i][k].cost + C[k][j].cost + d1 + d2 + d3;
 
-                    if (C[i][j] > cost) {
-                        C[i][j] = cost;
+                    if (C[i][j].cost > cost) {
+                        C[i][j].cost = cost;
+                        C[i][j].i = i;
+                        C[i][j].k = k;
+                        C[i][j].j = j;
                     }
                 }
             }
         }
     }
 
-    triagCost = C[0][N - 1];
+    findTriangle(0, N - 1, C, triangles);
+    triagCost = C[0][N - 1].cost;
 
 	return make_tuple(move(triangles), triagCost);
 }
@@ -241,6 +266,9 @@ int main(int argc, char *argv[]) {
 		float criterion;
 		vector<tuple<int, int, int>> triangles;
 		const vector<Point> &points = readProblem(inputFile);
+
+//        readResult("/home/anton/Development/CTU/PAG/ctu-pag-triangulation/solutions/inst50.bin",
+//                   8, criterion, triangles);
 
 		tie(triangles, criterion) = triangulate(points);
 		double totalDuration = duration_cast<duration<double>>(high_resolution_clock::now() - start).count();
