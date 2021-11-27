@@ -73,15 +73,13 @@ tuple<vector<tuple<int, int, int>>, float> triangulate(const vector<Point> &poin
     int N = points.size();
     Cell *C = new Cell [N * N];
 
-#pragma omp parallel for schedule(static, 4)
-    for (int i = 0; i < N; i++) {
-        for (int j = i; j < N; j++) {
+#pragma omp parallel for schedule(guided)
+    for (int i = 0; i < N; ++i) {
+        for (int j = i; j < N; ++j) {
             C[i * N + j].dist = calculateDistance(i, j, points);
         }
     }
-
     for (int diff = 0; diff < points.size(); ++diff) {
-
         int i = 0;
 #pragma omp parallel for schedule(dynamic) private(i)
         for (int j = diff; j < N; ++j) {
@@ -91,28 +89,38 @@ tuple<vector<tuple<int, int, int>>, float> triangulate(const vector<Point> &poin
             } else {
                 C[i * N + j].cost = MAXFLOAT;
                 Cell *cell = (C + i * N + j);
-                float distIJ = cell->dist;
                 float costIJ = cell->cost;
-                int localI, localK, localJ;
+                int localK;
+                int it = 0;
+                float *c1 = new float[diff - 1];
+                float *c2 = new float[diff - 1];
 
                 for (int k = i+1; k < j; ++k) {
-
-                    float cost = C[i * N + k].cost + C[k * N + j].cost
-                                 + C[i * N + k].dist + C[k * N + j].dist + distIJ;
-                    if (costIJ > cost) {
-                        costIJ = cost;
-                        localI = i;
-                        localK = k;
-                        localJ = j;
+                    c1[it++] = C[i * N + k].cost + C[i * N + k].dist;
+                }
+                it = 0;
+                for (int k = i+1; k < j; ++k) {
+                    c2[it] = C[k * N + j].cost + C[k * N + j].dist;
+                    it++;
+                }
+                it = 0;
+                for (; it < (j - i - 1); ++it) {
+                    c1[it] += c2[it];
+                    if (costIJ > c1[it]) {
+                        costIJ = c1[it];
+                        localK = i + 1 + it;
                     }
                 }
-                if (costIJ < cell->cost) {
-                    cell->cost = costIJ;
-                    cell->i = localI;
-                    cell->k = localK;
-                    cell->j = localJ;
-                }
 
+
+                if (costIJ < cell->cost) {
+                    cell->cost = costIJ + cell->dist;
+                    cell->i = i;
+                    cell->k = localK;
+                    cell->j = j;
+                }
+                delete[] c1;
+                delete[] c2;
             }
         }
     }
