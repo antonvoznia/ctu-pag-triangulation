@@ -30,17 +30,26 @@ struct Cell {
 };
 
 void findTriangle(int c1, int c2, Cell *C, const int &N, vector<tuple<int, int, int>> &triangles) {
-    if (c1 < 0 || c2 < 0) {
+    int i = C[c1 * N + c2].i;
+    int k = C[c1 * N + c2].k;
+    int j = C[c1 * N + c2].j;
+    if (i < 0) {
         return;
     }
+//#pragma omp critical
+    {
+        triangles.push_back(tuple(i, k, j));
+    }
 
-    triangles.push_back(tuple(C[c1 * N + c2].i, C[c1 * N + c2].k, C[c1 * N + c2].j));
-
+//#pragma omp task
     // triangles between dots i and k
-    findTriangle(C[c1 * N + c2].i, C[c1 * N + c2].k, C, N, triangles);
+    findTriangle(i, k, C, N, triangles);
 
+//#pragma omp task
     // triangles between dots k and j
-    findTriangle(C[c1 * N + c2].k, C[c1 * N + c2].j, C, N, triangles);
+    findTriangle(k, j, C, N, triangles);
+
+//#pragma omp taskwait
 }
 
 inline float calculateDistance(int pId1, int pId2, const vector<Point> &points) {
@@ -64,6 +73,7 @@ tuple<vector<tuple<int, int, int>>, float> triangulate(const vector<Point> &poin
     int N = points.size();
     Cell *C = new Cell [N * N];
 
+#pragma omp parallel for schedule(static, 4)
     for (int i = 0; i < N; i++) {
         for (int j = i; j < N; j++) {
             C[i * N + j].dist = calculateDistance(i, j, points);
@@ -71,29 +81,39 @@ tuple<vector<tuple<int, int, int>>, float> triangulate(const vector<Point> &poin
     }
 
     for (int diff = 0; diff < points.size(); ++diff) {
-        int i = 0;
 
+        int i = 0;
+#pragma omp parallel for schedule(dynamic) private(i)
         for (int j = diff; j < N; ++j) {
+            i = j - diff;
             if (j < i + 2) {
                 C[i * N + j].cost = 0.0f;
             } else {
                 C[i * N + j].cost = MAXFLOAT;
+                Cell *cell = (C + i * N + j);
+                float distIJ = cell->dist;
+                float costIJ = cell->cost;
+                int localI, localK, localJ;
 
                 for (int k = i+1; k < j; ++k) {
 
                     float cost = C[i * N + k].cost + C[k * N + j].cost
-                            + C[i * N + k].dist + C[k * N + j].dist + C[i * N + j].dist;
-                    {
-                        if (C[i * N + j].cost > cost) {
-                            C[i * N + j].cost = cost;
-                            C[i * N + j].i = i;
-                            C[i * N + j].k = k;
-                            C[i * N + j].j = j;
-                        }
+                                 + C[i * N + k].dist + C[k * N + j].dist + distIJ;
+                    if (costIJ > cost) {
+                        costIJ = cost;
+                        localI = i;
+                        localK = k;
+                        localJ = j;
                     }
                 }
+                if (costIJ < cell->cost) {
+                    cell->cost = costIJ;
+                    cell->i = localI;
+                    cell->k = localK;
+                    cell->j = localJ;
+                }
+
             }
-            ++i;
         }
     }
 
@@ -273,10 +293,20 @@ int main(int argc, char *argv[]) {
 		vector<tuple<int, int, int>> triangles;
 		const vector<Point> &points = readProblem(inputFile);
 
-//        readResult("/home/anton/Development/CTU/PAG/ctu-pag-triangulation/solutions/inst50.bin",
+//        readResult("/home/anton/Development/CTU/PAG/ctu-pag-triangulation/result.out",
 //                   8, criterion, triangles);
 
+
+//        readResult("/home/anton/Development/CTU/PAG/ctu-pag-triangulation/result.out",
+//                   10, criterion, triangles);
+
 		tie(triangles, criterion) = triangulate(points);
+//        cout << "number of triangles " << triangles.size() << endl;
+//        for (auto t : triangles) {
+//            int t1, t2, t3;
+//            tie(t1, t2, t3) = t;
+//            cout << t1 << " " << t2 << " " << t3 << endl;
+//        }
 		double totalDuration = duration_cast<duration<double>>(high_resolution_clock::now() - start).count();
 
 		if (!resultFile.empty()) {
@@ -297,4 +327,3 @@ int main(int argc, char *argv[]) {
 
 	return 0;
 }
-
